@@ -1,16 +1,26 @@
 package graalinterpreter
 import graalinterpreter.ast._
 import graalinterpreter.ast
+import scala.collection.mutable.HashMap
 
 case class Closure(parameters: List[Parameter], value: Term, context: Env)
 
-type Env = Map[String, Value]
+type Env = HashMap[String, Value]
 
 enum Value:
   case IntV(value: Int)
   case BooleanV(value: Boolean)
   case StringV(value: String)
   case ClosureV(value: Closure)
+  case TupleV(value: (Value, Value))
+
+def printValue: Value => Unit = {
+  case IntV(value)     => println(value)
+  case BooleanV(value) => println(value)
+  case StringV(value)  => println(value)
+  case ClosureV(value) => println("<#closure>")
+  case TupleV((a, b))  => println((printValue(a), printValue(b)))
+}
 import Value._
 
 extension (value: Value)
@@ -40,55 +50,7 @@ def evalBinary: (BinaryOp, Value, Value) => Value =
   case (BinaryOp.And, BooleanV(lhs), BooleanV(rhs))  => BooleanV(lhs && rhs)
   case (op, lhs, rhs) =>
     throw new Error(s"Invalid binary operation: $lhs $op $rhs")
-object tailcalled:
 
-  import scala.util.control.TailCalls._
-
-  def evalTerm(context: Env, term: Term): TailRec[Value] =
-    term match
-      case Integer(value, location) => done(IntV(value))
-      case Bool(value, location)    => done(BooleanV(value))
-      case Str(value, location)     => done(StringV(value))
-      case Var(text, location) =>
-        done(
-          context.getOrElse(text, throw new Error(s"Unknown variable $text"))
-        )
-      case Function(parameters, value, location) =>
-        done(ClosureV(Closure(parameters, value, context)))
-      case Call(calleeTerm, arguments, location) =>
-        tailcall(evalTerm(context, calleeTerm)).flatMap { callee =>
-          val args =
-            arguments.map(arg => tailcall(evalTerm(context, arg)).result)
-          val (Closure(parameters, value, ctx)) = callee.asClosure
-
-          val newContext = parameters
-            .zip(args)
-            .map { case (parameter, argument) =>
-              parameter.text -> argument
-            }
-            .toMap
-          tailcall(evalTerm(context ++ newContext, value))
-        }
-      case Binary(lhs, op, rhs, location) =>
-        for {
-          lhsValue <- tailcall(evalTerm(context, lhs))
-          rhsValue <- tailcall(evalTerm(context, rhs))
-        } yield evalBinary(op, lhsValue, rhsValue)
-      case Let(name, value, next, location) =>
-        for {
-          computedVal <- tailcall(evalTerm(context, value))
-        } yield evalTerm(context + (name.text -> computedVal), next).result
-
-      case If(condition, _then, otherwise, location) =>
-        tailcall(evalTerm(context, condition)).flatMap { conditionValue =>
-          if (conditionValue.asBoolean) tailcall(evalTerm(context, _then))
-          else tailcall(evalTerm(context, otherwise))
-        }
-      case Print(value, location) =>
-        tailcall(evalTerm(context, value)).map { result =>
-          println(s"Stdout: $result")
-          result
-        }
 def evalTerm(context: Env, term: Term): Value =
   term match
     case Integer(value, location) => IntV(value)
@@ -121,5 +83,17 @@ def evalTerm(context: Env, term: Term): Value =
       else evalTerm(context, otherwise)
     case Print(value, location) =>
       val result = evalTerm(context, value)
-      println(result)
+      printValue(result)
       result
+    case Tuple(first, second, location) =>
+      val fst: Value = evalTerm(context, first)
+      val snd = evalTerm(context, second)
+      TupleV(fst, snd)
+    case First(value, location) =>
+      evalTerm(context, value) match
+        case TupleV(first, second) => first
+        case _                     => throw new Error("Expected a tuple")
+    case Second(value, location) =>
+      evalTerm(context, value) match
+        case TupleV(first, second) => second
+        case _                     => throw new Error("Expected a tuple")
