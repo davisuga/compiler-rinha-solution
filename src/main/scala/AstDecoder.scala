@@ -61,6 +61,10 @@ case class If(
     location: Option[Loc] = None
 ) extends Term
 case class Print(value: Term, location: Option[Loc] = None) extends Term
+case class First(value: Term, location: Option[Loc] = None) extends Term
+case class Second(value: Term, location: Option[Loc] = None) extends Term
+case class Tuple(first: Term, second: Term, location: Option[Loc] = None)
+    extends Term
 
 object Term:
   given Codec[Term] = Codec.AsObject.derivedConfigured
