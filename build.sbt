@@ -13,5 +13,10 @@ lazy val root = project
       "io.circe" %% "circe-parser"
     ).map(_ % circeVersion),
     libraryDependencies += "com.lihaoyi" %% "os-lib" % "0.9.1",
-    libraryDependencies += "org.scalameta" %% "munit" % "0.7.29" % Test
+    libraryDependencies += "org.scalameta" %% "munit" % "0.7.29" % Test,
+    graalVMNativeImageOptions ++= Seq(
+      "-H:+AllowDeprecatedBuilderClassesOnImageClasspath"
+    ),
+    fork := true
   )
+  .enablePlugins(GraalVMNativeImagePlugin)
