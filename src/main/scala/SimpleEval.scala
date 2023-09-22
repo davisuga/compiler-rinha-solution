@@ -1,7 +1,9 @@
 package graalinterpreter
-import graalinterpreter.ast._
+import ast._
 import graalinterpreter.ast
+import utils.memoize
 import scala.collection.mutable.HashMap
+import scala.collection.mutable.ListBuffer
 
 case class Closure(parameters: List[Parameter], value: Term, context: Env)
 
@@ -14,12 +16,12 @@ enum Value:
   case ClosureV(value: Closure)
   case TupleV(value: (Value, Value))
 
-def printValue: Value => Unit = {
-  case IntV(value)     => println(value)
-  case BooleanV(value) => println(value)
-  case StringV(value)  => println(value)
-  case ClosureV(value) => println("<#closure>")
-  case TupleV((a, b))  => println((printValue(a), printValue(b)))
+def ppValue: Value => Any = {
+  case IntV(value)     => value
+  case BooleanV(value) => value
+  case StringV(value)  => value
+  case ClosureV(_)     => "<#closure>"
+  case TupleV((a, b))  => (ppValue(a), ppValue(b))
 }
 import Value._
 
@@ -51,7 +53,35 @@ def evalBinary: (BinaryOp, Value, Value) => Value =
   case (op, lhs, rhs) =>
     throw new Error(s"Invalid binary operation: $lhs $op $rhs")
 
-def evalTerm(context: Env, term: Term): Value =
+case class Result(value: Value, printOutput: ListBuffer[String])
+
+def evalCallBase(callValue: Call, context: Env): Result = {
+  val Call(calleeTerm, arguments, location) = callValue
+  val callee = evalTerm(context, calleeTerm)
+  val args = arguments.map(evalTerm(context, _))
+  val (Closure(parameters, value, ctx)) = callee.asClosure
+
+  val newContext = parameters
+    .zip(arguments)
+    .map { case (parameter, argument) =>
+      parameter.text -> evalTerm(context, argument)
+    }
+    .toMap
+
+  val printBuffer = new ListBuffer[String]()
+  val result = evalTerm(context ++ newContext, value, printBuffer)
+  Result(result, printBuffer)
+}
+
+lazy val memoizedEvalCall =
+  memoize[(Call, Env), Result](evalCallBase)
+
+def evalTerm(
+    context: Env,
+    term: Term,
+    printBuffer: ListBuffer[String] = new ListBuffer[String](),
+    evalCall: ((Call, Env)) => Result = memoizedEvalCall
+): Value =
   term match
     case Integer(value, location) => IntV(value)
     case Bool(value, location)    => BooleanV(value)
@@ -60,18 +90,16 @@ def evalTerm(context: Env, term: Term): Value =
       context.getOrElse(text, throw new Error(s"Unknown variable $text"))
     case Function(parameters, value, location) =>
       ClosureV(Closure(parameters, value, context))
-    case Call(calleeTerm, arguments, location) =>
-      val callee = evalTerm(context, calleeTerm)
-      val args = arguments.map(evalTerm(context, _))
-      val (Closure(parameters, value, ctx)) = callee.asClosure
-
-      val newContext = parameters
-        .zip(arguments)
-        .map { case (parameter, argument) =>
-          parameter.text -> evalTerm(context, argument)
-        }
-        .toMap
-      evalTerm(context ++ newContext, value)
+    case callValue @ Call(calleeTerm, arguments, location) =>
+      val Result(value, printOutput) = evalCall(callValue, context)
+      printOutput.foreach(println)
+      value
+    case Print(value, location) =>
+      val result = evalTerm(context, value, printBuffer)
+      val printOutput = ppValue(result)
+      println(printOutput)
+      printBuffer += printOutput.toString()
+      result
     case Binary(lhs, op, rhs, location) =>
       evalBinary(op, evalTerm(context, lhs), evalTerm(context, rhs))
 
@@ -81,10 +109,6 @@ def evalTerm(context: Env, term: Term): Value =
     case If(condition, _then, otherwise, location) =>
       if (evalTerm(context, condition).asBoolean) evalTerm(context, _then)
       else evalTerm(context, otherwise)
-    case Print(value, location) =>
-      val result = evalTerm(context, value)
-      printValue(result)
-      result
     case Tuple(first, second, location) =>
       val fst: Value = evalTerm(context, first)
       val snd = evalTerm(context, second)
