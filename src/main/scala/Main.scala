@@ -4,23 +4,26 @@ import ast._
 import truffled.{_, given}
 import java.util.Date
 import scala.collection.mutable.HashMap
+import scala.io.StdIn.readLine
+import os.Path
+import os.RelPath
 
 @main
-def main =
-  val filePath =
-    os.pwd / os.up / "rinha-de-compilador" / "files" / "combination.json"
-  val code = os.read(filePath)
+def main(
+    args: String*
+) =
+  val argPath = args.headOption
+    .map(RelPath(_))
+    .map(_.resolveFrom(os.pwd))
+
+  val officialPath =
+    Path("/var/rinha/source.rinha.json")
+
+  val code = os.read(argPath.getOrElse(officialPath))
 
   val program = (decode[Program](code))
   var metrics = Array[Long]()
   program match
     case Left(value) => println(value)
     case Right(Program(name, expr, _)) =>
-      for
-        _ <- 1 to 10
-        start = Date()
-        _ = println(evalTerm(HashMap.empty, expr))
-        end = Date()
-        _ = metrics = metrics.appended(end.getTime() - start.getTime())
-      yield ()
-      println(metrics.sum / metrics.length)
+      evalTerm(HashMap.empty, expr)
