@@ -20,3 +20,13 @@ lazy val root = project
     fork := true
   )
   .enablePlugins(GraalVMNativeImagePlugin)
+lazy val app = (project in file("app"))
+  .settings(
+    assembly / mainClass := Some("graalinterpreter.Main")
+  )
+assemblyMergeStrategy in assembly := {
+  case PathList("module-info.class") => MergeStrategy.discard
+  case x =>
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
