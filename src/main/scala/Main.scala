@@ -8,10 +8,7 @@ import scala.io.StdIn.readLine
 import os.Path
 import os.RelPath
 
-@main
-def main(
-    args: String*
-) =
+def readProgram(args: String*) =
   val argPath = args.headOption
     .map(RelPath(_))
     .map(_.resolveFrom(os.pwd))
@@ -21,9 +18,16 @@ def main(
 
   val code = os.read(argPath.getOrElse(officialPath))
 
-  val program = (decode[Program](code))
-  var metrics = Array[Long]()
+  (decode[Program](code))
+
+@main
+def main(
+    args: String*
+) =
+
+  val program = readProgram(args: _*)
   program match
     case Left(value) => println(value)
     case Right(Program(name, expr, _)) =>
-      evalTerm(HashMap.empty, expr)
+      truffled.ProgramRoot(expr).getCallTarget().call(HashMap.empty)
+    // evalTerm(HashMap.empty, expr)
