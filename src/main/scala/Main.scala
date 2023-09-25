@@ -30,4 +30,7 @@ def main(
     case Left(value)                   => println(value)
     case Right(Program(name, expr, _)) =>
       // truffled.ProgramRoot(expr).getCallTarget().call(HashMap.empty)
+      val before = Date().getTime()
       evalTerm(HashMap.empty, expr)
+      val after = Date().getTime()
+      println(s"${name} took ${after - before}ms")
