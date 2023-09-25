@@ -7,26 +7,31 @@ import com.oracle.truffle.api.CompilerDirectives
 import graalinterpreter.ast.*
 import com.oracle.truffle.api.dsl.{NodeChild, NodeChildren, NodeFactory}
 import com.oracle.truffle.api.nodes.Node.Child
+import graalinterpreter.Env
+import com.oracle.truffle.api
+import scala.collection.mutable.HashMap
+import graalinterpreter.Value
 
 abstract sealed class TermNode extends Node
 
-final case class IntegerNode(original: ast.Integer) extends TermNode:
+case class IntegerNode(original: ast.Integer) extends TermNode:
   def executeInt(): Int = original.value
-final case class BoolNode(original: ast.Bool) extends TermNode:
+case class BoolNode(original: ast.Bool) extends TermNode:
   def executeBool(): Boolean = original.value
 
-final case class StrNode(original: ast.Str) extends TermNode:
+case class StrNode(original: ast.Str) extends TermNode:
   def executeStr(): String = original.value
 
-final case class PrintNode(value: ast.Term) extends TermNode:
+case class PrintNode(value: ast.Term) extends TermNode:
   def executeVoid() = println(value)
 
 given Conversion[ast.Term, TermNode] = (astNode: ast.Term) =>
   astNode match
     case Integer(value, location) =>
       IntegerNode(astNode.asInstanceOf[ast.Integer])
-    case Bool(value, location) => BoolNode(astNode.asInstanceOf[ast.Bool])
-    // case Str(value, location)  => StrNode(astNode.asInstanceOf[decoder.Str])
+    case node @ Bool(value, location) => BoolNode(node)
+    case node @ Str(value, location)  => StrNode(node)
+    // case node @ Var(text, location)   => VarNode(node)
     // case Var(text, location) => VarNode(astNode.asInstanceOf[decoder.Var])
     // case Function(parameters, value, location) => FunctionNode(astNode.asInstanceOf[decoder.Function])
     // case Call(callee, arguments, location) => CallNode(astNode.asInstanceOf[decoder.Call])
@@ -36,7 +41,7 @@ given Conversion[ast.Term, TermNode] = (astNode: ast.Term) =>
     case Print(value, location) =>
       PrintNode(value)
 
-final case class BinaryOpNode(
+case class BinaryOpNode(
     @NodeChild lhs: TermNode,
     op: BinaryOp,
     @NodeChild rhs: TermNode
@@ -83,7 +88,7 @@ implicit class VarNode(original: ast.Var) extends TermNode:
   def executeVar(): String = original.text
 
 // @NodeInfo(shortName = "function")
-// final case class FunctionNode(parameters: List[Parameter], value: Term)
+// case class FunctionNode(parameters: List[Parameter], value: Term)
 //     extends TermNode {
 //   @CompilerDirectives.CompilationFinal
 //   private var cachedValue: TermNode = _
@@ -99,8 +104,17 @@ implicit class VarNode(original: ast.Var) extends TermNode:
 
 import com.oracle.truffle.api.nodes.RootNode
 
-final case class ProgramRoot(
+case class ProgramRoot(
     @Child private var exprNode: TermNode
-) extends RootNode(null) {
+) extends RootNode(GraalInterpreter()) {
   def execute(frame: VirtualFrame) = this.exprNode.getRootNode().execute(frame)
+}
+import com.oracle.truffle.api.TruffleLanguage
+
+case class GraalInterpreter() extends TruffleLanguage[graalinterpreter.Env] {
+
+  override protected def createContext(
+      env: TruffleLanguage.Env
+  ): graalinterpreter.Env = new HashMap[String, Value]()
+
 }

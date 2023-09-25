@@ -27,7 +27,7 @@ def main(
 
   val program = readProgram(args: _*)
   program match
-    case Left(value) => println(value)
+    case Left(value)                   => println(value)
     case Right(Program(name, expr, _)) =>
-      truffled.ProgramRoot(expr).getCallTarget().call(HashMap.empty)
-    // evalTerm(HashMap.empty, expr)
+      // truffled.ProgramRoot(expr).getCallTarget().call(HashMap.empty)
+      evalTerm(HashMap.empty, expr)
