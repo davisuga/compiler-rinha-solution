@@ -15,15 +15,20 @@ enum Value:
   case StringV(value: String)
   case ClosureV(value: Closure)
   case TupleV(value: (Value, Value))
-
-def ppValue: Value => Any = {
-  case IntV(value)     => value
-  case BooleanV(value) => value
-  case StringV(value)  => value
-  case ClosureV(_)     => "<#closure>"
-  case TupleV((a, b))  => (ppValue(a), ppValue(b))
-}
 import Value._
+
+trait PrettyPrintable[A]:
+  extension (value: A) def pp: String
+
+given PrettyPrintable[Value] with
+  extension (value: Value)
+    def pp: String = (value match
+      case IntV(value)     => value
+      case BooleanV(value) => value
+      case StringV(value)  => value
+      case ClosureV(_)     => "<#closure>"
+      case TupleV((a, b))  => ((a).pp, (b).pp)
+    ).toString
 
 extension (value: Value)
   def asInt = value match
@@ -40,18 +45,17 @@ def evalBinary: (BinaryOp, Value, Value) => Value =
   case (BinaryOp.Concat, StringV(lhs), StringV(rhs)) => StringV(lhs + rhs)
   case (BinaryOp.Add, IntV(lhs), IntV(rhs))          => IntV(lhs + rhs)
   case (BinaryOp.Sub, IntV(lhs), IntV(rhs))          => IntV(lhs - rhs)
-  case (BinaryOp.Add, lhs, rhs) =>
-    StringV(ppValue(lhs).toString() + ppValue(rhs).toString())
-  case (BinaryOp.Mul, IntV(lhs), IntV(rhs))         => IntV(lhs * rhs)
-  case (BinaryOp.Div, IntV(lhs), IntV(rhs))         => IntV(lhs / rhs)
-  case (BinaryOp.Rem, IntV(lhs), IntV(rhs))         => IntV(lhs % rhs)
-  case (BinaryOp.Lt, IntV(lhs), IntV(rhs))          => BooleanV(lhs < rhs)
-  case (BinaryOp.Gt, IntV(lhs), IntV(rhs))          => BooleanV(lhs > rhs)
-  case (BinaryOp.Lte, IntV(lhs), IntV(rhs))         => BooleanV(lhs <= rhs)
-  case (BinaryOp.Gte, IntV(lhs), IntV(rhs))         => BooleanV(lhs >= rhs)
-  case (BinaryOp.Eq | BinaryOp.Neq, lhs, rhs)       => BooleanV(lhs == rhs)
-  case (BinaryOp.Or, BooleanV(lhs), BooleanV(rhs))  => BooleanV(lhs || rhs)
-  case (BinaryOp.And, BooleanV(lhs), BooleanV(rhs)) => BooleanV(lhs && rhs)
+  case (BinaryOp.Add, lhs, rhs)                      => StringV(lhs.pp + rhs.pp)
+  case (BinaryOp.Mul, IntV(lhs), IntV(rhs))          => IntV(lhs * rhs)
+  case (BinaryOp.Div, IntV(lhs), IntV(rhs))          => IntV(lhs / rhs)
+  case (BinaryOp.Rem, IntV(lhs), IntV(rhs))          => IntV(lhs % rhs)
+  case (BinaryOp.Lt, IntV(lhs), IntV(rhs))           => BooleanV(lhs < rhs)
+  case (BinaryOp.Gt, IntV(lhs), IntV(rhs))           => BooleanV(lhs > rhs)
+  case (BinaryOp.Lte, IntV(lhs), IntV(rhs))          => BooleanV(lhs <= rhs)
+  case (BinaryOp.Gte, IntV(lhs), IntV(rhs))          => BooleanV(lhs >= rhs)
+  case (BinaryOp.Eq | BinaryOp.Neq, lhs, rhs)        => BooleanV(lhs == rhs)
+  case (BinaryOp.Or, BooleanV(lhs), BooleanV(rhs))   => BooleanV(lhs || rhs)
+  case (BinaryOp.And, BooleanV(lhs), BooleanV(rhs))  => BooleanV(lhs && rhs)
   case (op, lhs, rhs) =>
     throw new Error(s"Invalid binary operation: $lhs $op $rhs")
 
@@ -98,7 +102,7 @@ def evalTerm(
       value
     case Print(value, location) =>
       val result = evalTerm(context, value, printBuffer)
-      val printOutput = ppValue(result)
+      val printOutput = (result).pp
       println(printOutput)
       printBuffer += printOutput.toString()
       result

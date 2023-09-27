@@ -15,26 +15,21 @@ given Configuration = Configuration.default
   }
 
 case class Loc(start: Int, end: Int, filename: String) derives Codec.AsObject
-
 enum BinaryOp:
   case Concat, Add, Sub, Mul, Div, Rem, Eq, Neq, Lt, Gt, Lte, Gte, And, Or
-
 object BinaryOp:
   given Codec[BinaryOp] =
     Codec.from(
       Decoder.decodeString.map(BinaryOp.valueOf),
       Encoder.encodeString.contramap(_.toString)
     )
-
 case class Parameter(text: String, location: Option[Loc] = None)
     derives Codec.AsObject
 
 sealed trait Term
-
 case class Integer(value: Int, location: Option[Loc] = None) extends Term
 case class Bool(value: Boolean, location: Option[Loc] = None) extends Term
 case class Str(value: String, location: Option[Loc] = None) extends Term
-
 case class Var(text: String, location: Option[Loc] = None) extends Term
 case class Function(
     parameters: List[Parameter],
