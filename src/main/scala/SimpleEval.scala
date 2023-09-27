@@ -63,9 +63,9 @@ case class Result(value: Value, printOutput: ListBuffer[String])
 
 def evalCallBase(callValue: Call, context: Env): Result = {
   val Call(calleeTerm, arguments, location) = callValue
-  val callee = evalTerm(context, calleeTerm)
   val args = arguments.map(evalTerm(context, _))
-  val (Closure(parameters, value, ctx)) = callee.asClosure
+  val (Closure(parameters, value, ctx)) =
+    evalTerm(context, calleeTerm).asClosure
 
   val newContext = parameters
     .zip(arguments)
