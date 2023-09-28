@@ -4,6 +4,7 @@ import graalinterpreter.ast
 import utils.memoize
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.ListBuffer
+import graalinterpreter.utils.LRUCache
 
 case class Closure(parameters: List[Parameter], value: Term, context: Env)
 
@@ -79,9 +80,18 @@ def evalCallBase(callValue: Call, context: Env): Result = {
   Result(result, printBuffer)
 }
 
-lazy val memoizedEvalCall =
-  memoize[(Call, Env), Result](evalCallBase)
+val memoizedEvalCallCache =
+  LRUCache[(Call, Env), Result](1000) // limit to 1000 entries
 
+def memoizedEvalCall(call: (Call, Env)): Result = {
+  memoizedEvalCallCache.get(call) match {
+    case Some(result) => result
+    case None =>
+      val result = evalCallBase(call._1, call._2)
+      memoizedEvalCallCache.put(call, result)
+      result
+  }
+}
 def evalTerm(
     context: Env,
     term: Term,
