@@ -31,6 +31,6 @@ def main(
     case Right(Program(name, expr, _)) =>
       // truffled.ProgramRoot(expr).getCallTarget().call(HashMap.empty)
       val before = Date().getTime()
-      evalTerm(HashMap.empty, expr)
+      tailcalled.evalTerm(HashMap.empty, expr).result
       val after = Date().getTime()
       println(s"${name} took ${after - before}ms")

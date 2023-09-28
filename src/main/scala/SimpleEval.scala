@@ -81,7 +81,7 @@ def evalCallBase(callValue: Call, context: Env): Result = {
 }
 
 val memoizedEvalCallCache =
-  LRUCache[(Call, Env), Result](1000) // limit to 1000 entries
+  LRUCache[(Call, Env), Result](10000) // limit to 1000 entries
 
 def memoizedEvalCall(call: (Call, Env)): Result = {
   memoizedEvalCallCache.get(call) match {
@@ -92,48 +92,165 @@ def memoizedEvalCall(call: (Call, Env)): Result = {
       result
   }
 }
+object tailcalled:
+  import scala.util.control.TailCalls._
+  val evalCallBaseCache =
+    LRUCache[(Call, Env), Result](100000) // limit to 1000 entries
+
+  def evalCallBase(callValue: Call, context: Env): TailRec[Result] = {
+    evalCallBaseCache.get((callValue, context)) match {
+      case Some(cachedResult) => done(cachedResult)
+      case None =>
+        val Call(calleeTerm, arguments, location) = callValue
+
+        // Evaluate arguments
+        val argsEvals = arguments.map(arg => tailcall(evalTerm(context, arg)))
+
+        // Chain the evaluations together
+        val argsResults = argsEvals.foldLeft(done(List.empty[Value])) {
+          (acc, eval) =>
+            for {
+              resultsSoFar <- acc
+              nextResult <- eval
+            } yield resultsSoFar :+ nextResult
+        }
+
+        argsResults.flatMap { args =>
+          tailcall(evalTerm(context, calleeTerm)).flatMap { closureValue =>
+            val (Closure(parameters, value, ctx)) = closureValue.asClosure
+
+            val newContext = parameters
+              .zip(args)
+              .map { case (parameter, argumentValue) =>
+                parameter.text -> argumentValue
+              }
+              .toMap
+
+            val printBuffer = new ListBuffer[String]()
+
+            evalTerm(context ++ newContext, value, printBuffer).map(value =>
+              val result = Result(value, printBuffer)
+              evalCallBaseCache.put(
+                (callValue, context),
+                Result(value, printBuffer)
+              )
+              result
+            )
+
+          }
+        }
+    }
+  }
+
+  def evalTerm(
+      context: Env,
+      term: Term,
+      printBuffer: ListBuffer[String] = new ListBuffer[String]()
+      // evalCall: ((Call, Env)) => Result = safeMemoizedEvalCall
+  ): TailRec[Value] =
+    term match
+      case Integer(value, location) => done(IntV(value))
+      case Bool(value, location)    => done(BooleanV(value))
+      case Str(value, location)     => done(StringV(value))
+      case Var(text, location) =>
+        done(
+          context.getOrElse(text, throw new Error(s"Unknown variable $text"))
+        )
+      case Function(parameters, value, location) =>
+        done(ClosureV(Closure(parameters, value, context)))
+      case callValue @ Call(calleeTerm, arguments, location) =>
+        tailcall(evalCallBase(callValue, context)).map {
+          case Result(value, printOutput) =>
+            printOutput.foreach(println)
+            value
+        }
+      case Print(value, location) =>
+        tailcall(evalTerm(context, value, printBuffer)).map { result =>
+          val printOutput = (result).pp
+          println(printOutput)
+          printBuffer += printOutput.toString()
+          result
+        }
+      case Binary(lhs, op, rhs, location) =>
+        for {
+          left <- tailcall(evalTerm(context, lhs))
+          right <- tailcall(evalTerm(context, rhs))
+        } yield evalBinary(op, left, right)
+      case Let(name, value, next, location) =>
+        tailcall(evalTerm(context, value)).flatMap { evaluatedValue =>
+          evalTerm(context + (name.text -> evaluatedValue), next)
+        }
+      case If(condition, _then, otherwise, location) =>
+        tailcall(evalTerm(context, condition)).flatMap { condValue =>
+          if (condValue.asBoolean) evalTerm(context, _then)
+          else evalTerm(context, otherwise)
+        }
+      case Tuple(first, second, location) =>
+        for {
+          fst <- tailcall(evalTerm(context, first))
+          snd <- tailcall(evalTerm(context, second))
+        } yield TupleV(fst, snd)
+      case First(value, location) =>
+        tailcall(evalTerm(context, value)).map {
+          case TupleV(first, second) => first
+          case _                     => throw new Error("Expected a tuple")
+        }
+      case Second(value, location) =>
+        tailcall(evalTerm(context, value)).map {
+          case TupleV(first, second) => second
+          case _                     => throw new Error("Expected a tuple")
+        }
+object base:
+  def evalTerm(
+      context: Env,
+      term: Term,
+      printBuffer: ListBuffer[String] = new ListBuffer[String](),
+      evalCall: ((Call, Env)) => Result = memoizedEvalCall
+  ): Value =
+    term match
+      case Integer(value, location) => IntV(value)
+      case Bool(value, location)    => BooleanV(value)
+      case Str(value, location)     => StringV(value)
+      case Var(text, location) =>
+        context.getOrElse(text, throw new Error(s"Unknown variable $text"))
+      case Function(parameters, value, location) =>
+        ClosureV(Closure(parameters, value, context))
+      case callValue @ Call(calleeTerm, arguments, location) =>
+        val Result(value, printOutput) = evalCall(callValue, context)
+        printOutput.foreach(println)
+        value
+      case Print(value, location) =>
+        val result = evalTerm(context, value, printBuffer)
+        val printOutput = (result).pp
+        println(printOutput)
+        printBuffer += printOutput.toString()
+        result
+      case Binary(lhs, op, rhs, location) =>
+        evalBinary(op, evalTerm(context, lhs), evalTerm(context, rhs))
+
+      case Let(name, value, next, location) =>
+        evalTerm(context + (name.text -> evalTerm(context, value)), next)
+
+      case If(condition, _then, otherwise, location) =>
+        if (evalTerm(context, condition).asBoolean) evalTerm(context, _then)
+        else evalTerm(context, otherwise)
+      case Tuple(first, second, location) =>
+        val fst: Value = evalTerm(context, first)
+        val snd = evalTerm(context, second)
+        TupleV(fst, snd)
+      case First(value, location) =>
+        evalTerm(context, value) match
+          case TupleV(first, second) => first
+          case _                     => throw new Error("Expected a tuple")
+      case Second(value, location) =>
+        evalTerm(context, value) match
+          case TupleV(first, second) => second
+          case _                     => throw new Error("Expected a tuple")
+
 def evalTerm(
     context: Env,
     term: Term,
-    printBuffer: ListBuffer[String] = new ListBuffer[String](),
-    evalCall: ((Call, Env)) => Result = memoizedEvalCall
+    printBuffer: ListBuffer[String] = new ListBuffer[String]()
 ): Value =
-  term match
-    case Integer(value, location) => IntV(value)
-    case Bool(value, location)    => BooleanV(value)
-    case Str(value, location)     => StringV(value)
-    case Var(text, location) =>
-      context.getOrElse(text, throw new Error(s"Unknown variable $text"))
-    case Function(parameters, value, location) =>
-      ClosureV(Closure(parameters, value, context))
-    case callValue @ Call(calleeTerm, arguments, location) =>
-      val Result(value, printOutput) = evalCall(callValue, context)
-      printOutput.foreach(println)
-      value
-    case Print(value, location) =>
-      val result = evalTerm(context, value, printBuffer)
-      val printOutput = (result).pp
-      println(printOutput)
-      printBuffer += printOutput.toString()
-      result
-    case Binary(lhs, op, rhs, location) =>
-      evalBinary(op, evalTerm(context, lhs), evalTerm(context, rhs))
-
-    case Let(name, value, next, location) =>
-      evalTerm(context + (name.text -> evalTerm(context, value)), next)
-
-    case If(condition, _then, otherwise, location) =>
-      if (evalTerm(context, condition).asBoolean) evalTerm(context, _then)
-      else evalTerm(context, otherwise)
-    case Tuple(first, second, location) =>
-      val fst: Value = evalTerm(context, first)
-      val snd = evalTerm(context, second)
-      TupleV(fst, snd)
-    case First(value, location) =>
-      evalTerm(context, value) match
-        case TupleV(first, second) => first
-        case _                     => throw new Error("Expected a tuple")
-    case Second(value, location) =>
-      evalTerm(context, value) match
-        case TupleV(first, second) => second
-        case _                     => throw new Error("Expected a tuple")
+  // base.evalTerm(context, term, printBuffer)
+  tailcalled.evalTerm(context, term, printBuffer).result
