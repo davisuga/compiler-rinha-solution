@@ -171,11 +171,39 @@ class InterpreterSuite extends FunSuite {
   test("Combination") {
     readProgram("src/test/resources/combination.rinha.json") map:
       case (Program(_name, term, _)) =>
-        assertEquals(evalTerm(new Env(), term), IntV(45))
+        assertEquals(evalTerm(new Env(), term), IntV(499500))
   }
   test("Fib") {
     readProgram("src/test/resources/fib.rinha.json") map:
       case (Program(_name, term, _)) =>
         assertEquals(evalTerm(new Env(), term), IntV(102334155))
+  }
+  test("Operations") {
+    try
+      readProgram("src/test/resources/operations.rinha.json") map:
+        case (Program(_name, term, _)) =>
+          assertEquals(evalTerm(new Env(), term), StringV("OK"))
+    catch case e: StackOverflowError => fail("Stack overflow")
+  }
+  test("Flood") {
+    try
+      readProgram("src/test/resources/flood.rinha.json") map:
+        case (Program(_name, term, _)) =>
+          assertEquals(evalTerm(new Env(), term), IntV(0))
+    catch case e: StackOverflowError => fail("Stack overflow")
+  }
+  test("Fact") {
+
+    readProgram("src/test/resources/fact.rinha.json") map:
+      case (Program(_name, term, _)) =>
+        val now = System.currentTimeMillis()
+        val StringV(result) = (evalTerm(new Env(), term): @unchecked)
+        val elapsed = System.currentTimeMillis() - now
+        println(s"Fact took $elapsed ms")
+        assert(!result.isEmpty())
+    // catch
+    //   case e: StackOverflowError =>
+    //     println(e.getStackTrace().apply(0))
+    //     fail("Stack overflow")
   }
 }
